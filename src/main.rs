@@ -4,10 +4,13 @@ mod cli;
 mod convert;
 mod disk;
 mod hex_utils;
+mod keys;
 mod sweep;
 
 use crate::bitcoind_client::BitcoindClient;
 use crate::disk::FilesystemLogger;
+use crate::keys::MyKeys;
+use crate::keys::MyKeysManager;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode;
 use bitcoin::io;
@@ -20,9 +23,7 @@ use lightning::chain::{BestBlock, Filter, Watch};
 use lightning::events::bump_transaction::{BumpTransactionEventHandler, Wallet};
 use lightning::events::{Event, PaymentFailureReason, PaymentPurpose};
 use lightning::ln::channelmanager::{self, RecentPaymentDetails};
-use lightning::ln::channelmanager::{
-	ChainParameters, ChannelManagerReadArgs, PaymentId, SimpleArcChannelManager,
-};
+use lightning::ln::channelmanager::{ChainParameters, ChannelManagerReadArgs, PaymentId};
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::peer_handler::{
 	IgnoringMessageHandler, MessageHandler, PeerManager as LdkPeerManager,
@@ -34,8 +35,9 @@ use lightning::onion_message::messenger::{
 use lightning::routing::gossip;
 use lightning::routing::gossip::{NodeId, P2PGossipSync};
 use lightning::routing::router::DefaultRouter;
+use lightning::routing::scoring::ProbabilisticScorer;
 use lightning::routing::scoring::ProbabilisticScoringFeeParameters;
-use lightning::sign::{EntropySource, InMemorySigner, KeysManager};
+use lightning::sign::{EntropySource, InMemorySigner};
 use lightning::types::payment::{PaymentHash, PaymentPreimage, PaymentSecret};
 use lightning::util::config::UserConfig;
 use lightning::util::hash_tables::hash_map::Entry;
@@ -145,8 +147,8 @@ type ChainMonitor = chainmonitor::ChainMonitor<
 		MonitorUpdatingPersister<
 			Arc<FilesystemStore>,
 			Arc<FilesystemLogger>,
-			Arc<KeysManager>,
-			Arc<KeysManager>,
+			Arc<MyKeysManager>,
+			Arc<MyKeysManager>,
 			Arc<BitcoindClient>,
 			Arc<BitcoindClient>,
 		>,
@@ -168,7 +170,28 @@ pub(crate) type PeerManager = LdkPeerManager<
 	Arc<OnionMessenger>,
 	Arc<FilesystemLogger>,
 	IgnoringMessageHandler,
-	Arc<KeysManager>,
+	Arc<MyKeysManager>,
+>;
+
+pub type SimpleArcChannelManager<M, T, F, L> = channelmanager::ChannelManager<
+	Arc<M>,
+	Arc<T>,
+	Arc<MyKeysManager>,
+	Arc<MyKeysManager>,
+	Arc<MyKeysManager>,
+	Arc<F>,
+	Arc<
+		DefaultRouter<
+			Arc<gossip::NetworkGraph<Arc<L>>>,
+			Arc<L>,
+			Arc<MyKeysManager>,
+			Arc<RwLock<ProbabilisticScorer<Arc<gossip::NetworkGraph<Arc<L>>>, Arc<L>>>>,
+			ProbabilisticScoringFeeParameters,
+			ProbabilisticScorer<Arc<gossip::NetworkGraph<Arc<L>>>, Arc<L>>,
+		>,
+	>,
+	Arc<DefaultMessageRouter<Arc<gossip::NetworkGraph<Arc<L>>>, Arc<L>, Arc<MyKeysManager>>>,
+	Arc<L>,
 >;
 
 pub(crate) type ChannelManager =
@@ -179,11 +202,11 @@ pub(crate) type NetworkGraph = gossip::NetworkGraph<Arc<FilesystemLogger>>;
 // Note that if you do not use an `OMDomainResolver` here you should use SimpleArcOnionMessenger
 // instead.
 type OnionMessenger = LdkOnionMessenger<
-	Arc<KeysManager>,
-	Arc<KeysManager>,
+	Arc<MyKeysManager>,
+	Arc<MyKeysManager>,
 	Arc<FilesystemLogger>,
 	Arc<ChannelManager>,
-	Arc<DefaultMessageRouter<Arc<NetworkGraph>, Arc<FilesystemLogger>, Arc<KeysManager>>>,
+	Arc<DefaultMessageRouter<Arc<NetworkGraph>, Arc<FilesystemLogger>, Arc<MyKeysManager>>>,
 	Arc<ChannelManager>,
 	Arc<ChannelManager>,
 	Arc<OMDomainResolver<Arc<ChannelManager>>>,
@@ -193,7 +216,7 @@ type OnionMessenger = LdkOnionMessenger<
 pub(crate) type BumpTxEventHandler = BumpTransactionEventHandler<
 	Arc<BitcoindClient>,
 	Arc<Wallet<Arc<BitcoindClient>, Arc<FilesystemLogger>>>,
-	Arc<KeysManager>,
+	Arc<MyKeysManager>,
 	Arc<FilesystemLogger>,
 >;
 
@@ -204,7 +227,7 @@ pub(crate) type OutputSweeper = ldk_sweep::OutputSweeper<
 	Arc<dyn Filter + Send + Sync>,
 	Arc<FilesystemStore>,
 	Arc<FilesystemLogger>,
-	Arc<KeysManager>,
+	Arc<MyKeysManager>,
 >;
 
 // Needed due to rust-lang/rust#63033.
@@ -212,7 +235,7 @@ struct OutputSweeperWrapper(Arc<OutputSweeper>);
 
 async fn handle_ldk_events(
 	channel_manager: Arc<ChannelManager>, bitcoind_client: &BitcoindClient,
-	network_graph: &NetworkGraph, keys_manager: &KeysManager,
+	network_graph: &NetworkGraph, keys_manager: &MyKeysManager,
 	bump_tx_event_handler: &BumpTxEventHandler, peer_manager: Arc<PeerManager>,
 	inbound_payments: Arc<Mutex<InboundPaymentInfoStorage>>,
 	outbound_payments: Arc<Mutex<OutboundPaymentInfoStorage>>, fs_store: Arc<FilesystemStore>,
@@ -633,8 +656,17 @@ async fn start_ldk() {
 		key
 	};
 	let cur = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
-	let keys_manager = Arc::new(KeysManager::new(&keys_seed, cur.as_secs(), cur.subsec_nanos()));
 
+	let keys_manager = match args.channel_secrets {
+		Some(ref secrets) => MyKeys::with_channel_keys(
+			keys_seed,
+			cur.as_secs(),
+			cur.subsec_nanos(),
+			secrets.to_string(),
+		)
+		.inner(),
+		None => MyKeys::new(keys_seed, cur.as_secs(), cur.subsec_nanos()).inner(),
+	};
 	let bump_tx_event_handler = Arc::new(BumpTransactionEventHandler::new(
 		Arc::clone(&broadcaster),
 		Arc::new(Wallet::new(Arc::clone(&bitcoind_client), Arc::clone(&logger))),

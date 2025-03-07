@@ -1,5 +1,6 @@
 use crate::disk::{self, INBOUND_PAYMENTS_FNAME, OUTBOUND_PAYMENTS_FNAME};
 use crate::hex_utils;
+use crate::keys::MyKeysManager;
 use crate::{
 	ChainMonitor, ChannelManager, HTLCStatus, InboundPaymentInfoStorage, MillisatAmount,
 	NetworkGraph, OutboundPaymentInfoStorage, PaymentInfo, PeerManager,
@@ -21,7 +22,7 @@ use lightning::onion_message::dns_resolution::HumanReadableName;
 use lightning::onion_message::messenger::Destination;
 use lightning::routing::gossip::NodeId;
 use lightning::routing::router::{PaymentParameters, RouteParameters};
-use lightning::sign::{EntropySource, KeysManager};
+use lightning::sign::EntropySource;
 use lightning::types::payment::{PaymentHash, PaymentPreimage};
 use lightning::util::config::{ChannelHandshakeConfig, ChannelHandshakeLimits, UserConfig};
 use lightning::util::persist::KVStore;
@@ -46,11 +47,12 @@ pub(crate) struct LdkUserInfo {
 	pub(crate) ldk_announced_listen_addr: Vec<SocketAddress>,
 	pub(crate) ldk_announced_node_name: [u8; 32],
 	pub(crate) network: Network,
+	pub(crate) channel_secrets: Option<String>,
 }
 
 pub(crate) fn poll_for_user_input(
 	peer_manager: Arc<PeerManager>, channel_manager: Arc<ChannelManager>,
-	chain_monitor: Arc<ChainMonitor>, keys_manager: Arc<KeysManager>,
+	chain_monitor: Arc<ChainMonitor>, keys_manager: Arc<MyKeysManager>,
 	network_graph: Arc<NetworkGraph>, inbound_payments: Arc<Mutex<InboundPaymentInfoStorage>>,
 	outbound_payments: Arc<Mutex<OutboundPaymentInfoStorage>>, ldk_data_dir: String,
 	fs_store: Arc<FilesystemStore>,

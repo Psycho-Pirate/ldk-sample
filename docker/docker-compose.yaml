@@ -1,0 +1,7 @@
+version: "3.8"
+
+services:
+  ldk-lnprototest:
+    build:
+      context: ../
+      dockerfile: ./docker/Dockerfile

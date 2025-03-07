@@ -1,12 +1,14 @@
-# ldk-sample
-Sample node implementation using LDK.
+# ldk-lnprototest
+This repo uses a LDK Sample node implementation and integrates it with Lnprototest test suite.
 
 ## Installation
 ```
-git clone https://github.com/lightningdevkit/ldk-sample
+git clone https://github.com/Psycho-Pirate/ldk-sample.git
 ```
 
 ## Usage
+
+### LDK-Sample
 ```
 cd ldk-sample
 cargo run <bitcoind-rpc-username>:<bitcoind-rpc-password>@<bitcoind-rpc-host>:<bitcoind-rpc-port> <ldk_storage_directory_path> [<ldk-peer-listening-port>] [<bitcoin-network>] [<announced-node-name>] [<announced-listen-addr>]
@@ -21,6 +23,22 @@ cargo run <bitcoind-rpc-username>:<bitcoind-rpc-password>@<bitcoind-rpc-host>:<b
 `announced-listen-addr` can be set to an IPv4 or IPv6 address to announce that as a publicly-connectable address for this node.
 `announced-node-name` can be any string up to 32 bytes in length, representing this node's alias.
 
+### Lnprototest
+
+To test with Lnprototest, you will need:
+1. `bitcoind` installed, and in your path.
+2. `Lnprototest` repo cloned and in your python path. Use `export PYTHONPATH=LNPROTOTEST_DIRECTORY`.
+
+To install the necessary dependences
+```
+cd Lnprototest_Testing
+pip3 install poetry
+poetry install
+```
+Now we can run the test
+```
+poetry run pytest LNPROTOTEST_DIRECTORY/tests --runner=ldk_lnprototest.Runner --log-cli-level=DEBUG
+```
 ## License
 
 Licensed under either:
