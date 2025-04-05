@@ -108,6 +108,12 @@ class Runner(lnprototest.Runner):
         if not os.path.exists(self.ldk_dir):
             os.makedirs(self.ldk_dir)
 
+    def has_option(self, optname: str) -> Optional[str]:
+        """Returns None if it doesn't support, otherwise 'even' or 'odd' (required or supported)"""
+        if optname in self.options:
+            return self.options[optname]
+        return None
+
     def get_keyset(self) -> KeySet:
         return KeySet(
             revocation_base_secret="0000000000000000000000000000000000000000000000000000000000000011",
